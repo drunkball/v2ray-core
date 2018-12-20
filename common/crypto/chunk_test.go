@@ -1,6 +1,7 @@
 package crypto_test
 
 import (
+	"bytes"
 	"io"
 	"testing"
 
@@ -13,18 +14,18 @@ import (
 func TestChunkStreamIO(t *testing.T) {
 	assert := With(t)
 
-	cache := buf.NewSize(8192)
+	cache := bytes.NewBuffer(make([]byte, 0, 8192))
 
 	writer := NewChunkStreamWriter(PlainChunkSizeParser{}, cache)
 	reader := NewChunkStreamReader(PlainChunkSizeParser{}, cache)
 
 	b := buf.New()
-	b.WriteBytes('a', 'b', 'c', 'd')
-	common.Must(writer.WriteMultiBuffer(buf.NewMultiBufferValue(b)))
+	b.WriteString("abcd")
+	common.Must(writer.WriteMultiBuffer(buf.MultiBuffer{b}))
 
 	b = buf.New()
-	b.WriteBytes('e', 'f', 'g')
-	common.Must(writer.WriteMultiBuffer(buf.NewMultiBufferValue(b)))
+	b.WriteString("efg")
+	common.Must(writer.WriteMultiBuffer(buf.MultiBuffer{b}))
 
 	common.Must(writer.WriteMultiBuffer(buf.MultiBuffer{}))
 

@@ -1,6 +1,7 @@
 package crypto_test
 
 import (
+	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -29,11 +30,10 @@ func TestAuthenticationReaderWriter(t *testing.T) {
 	rawPayload := make([]byte, payloadSize)
 	rand.Read(rawPayload)
 
-	payload := buf.NewSize(payloadSize)
-	payload.Write(rawPayload)
+	payload := buf.MergeBytes(nil, rawPayload)
 	assert(payload.Len(), Equals, int32(payloadSize))
 
-	cache := buf.NewSize(160 * 1024)
+	cache := bytes.NewBuffer(nil)
 	iv := make([]byte, 12)
 	rand.Read(iv)
 
@@ -43,8 +43,8 @@ func TestAuthenticationReaderWriter(t *testing.T) {
 		AdditionalDataGenerator: GenerateEmptyBytes(),
 	}, PlainChunkSizeParser{}, cache, protocol.TransferTypeStream, nil)
 
-	assert(writer.WriteMultiBuffer(buf.NewMultiBufferValue(payload)), IsNil)
-	assert(cache.Len(), Equals, int32(82658))
+	assert(writer.WriteMultiBuffer(payload), IsNil)
+	assert(cache.Len(), Equals, int(82658))
 	assert(writer.WriteMultiBuffer(buf.MultiBuffer{}), IsNil)
 
 	reader := NewAuthenticationReader(&AEADAuthenticator{
@@ -59,13 +59,13 @@ func TestAuthenticationReaderWriter(t *testing.T) {
 		mb2, err := reader.ReadMultiBuffer()
 		assert(err, IsNil)
 
-		mb.AppendMulti(mb2)
+		mb, _ = buf.MergeMulti(mb, mb2)
 	}
 
 	assert(mb.Len(), Equals, int32(payloadSize))
 
 	mbContent := make([]byte, payloadSize)
-	mb.Read(mbContent)
+	buf.SplitBytes(mb, mbContent)
 	assert(mbContent, Equals, rawPayload)
 
 	_, err = reader.ReadMultiBuffer()
@@ -83,7 +83,7 @@ func TestAuthenticationReaderWriterPacket(t *testing.T) {
 	aead, err := cipher.NewGCM(block)
 	assert(err, IsNil)
 
-	cache := buf.NewSize(1024)
+	cache := buf.New()
 	iv := make([]byte, 12)
 	rand.Read(iv)
 
@@ -96,11 +96,11 @@ func TestAuthenticationReaderWriterPacket(t *testing.T) {
 	var payload buf.MultiBuffer
 	pb1 := buf.New()
 	pb1.Write([]byte("abcd"))
-	payload.Append(pb1)
+	payload = append(payload, pb1)
 
 	pb2 := buf.New()
 	pb2.Write([]byte("efgh"))
-	payload.Append(pb2)
+	payload = append(payload, pb2)
 
 	assert(writer.WriteMultiBuffer(payload), IsNil)
 	assert(cache.Len(), GreaterThan, int32(0))
@@ -116,10 +116,10 @@ func TestAuthenticationReaderWriterPacket(t *testing.T) {
 	mb, err := reader.ReadMultiBuffer()
 	assert(err, IsNil)
 
-	b1 := mb.SplitFirst()
+	mb, b1 := buf.SplitFirst(mb)
 	assert(b1.String(), Equals, "abcd")
 
-	b2 := mb.SplitFirst()
+	mb, b2 := buf.SplitFirst(mb)
 	assert(b2.String(), Equals, "efgh")
 
 	assert(mb.IsEmpty(), IsTrue)
